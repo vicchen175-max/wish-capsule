@@ -1,0 +1,3 @@
+Wishes Atelier Serif and Wishes Atelier Sans are renamed local subsets of Noto Serif SC and Noto Sans SC.
+Noto Serif SC: Copyright 2017-2023 Adobe. Noto Sans SC: Copyright 2014-2021 Adobe, with Reserved Font Name 'Source'.
+Distributed under the SIL Open Font License 1.1. See the two accompanying license files.
