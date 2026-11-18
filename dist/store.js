@@ -1,6 +1,14 @@
 (() => {
   'use strict';
   const fresh = () => ({revision:0, notes:[], pending:null});
+  const designs = window.WishCards.designs;
+  const validIds = new Set(designs.map(design => design.id));
+  const assignDesign = () => designs[randomIndex(designs.length)].id;
+  function fillMissingDesigns(state) {
+    for (const note of state.notes) {
+      if (!validIds.has(note.designId)) note.designId = assignDesign();
+    }
+  }
   let memory = fresh();
   const connection = new Promise(resolve => {
     try {
@@ -13,7 +21,7 @@
   async function access(action) {
     const db = await connection;
     if (!db) {
-      if (action) { action(memory); memory.revision++; }
+      if (action) { fillMissingDesigns(memory); action(memory); memory.revision++; }
       return structuredClone(memory);
     }
     return new Promise((resolve, reject) => {
@@ -23,7 +31,7 @@
       let state;
       request.onsuccess = () => {
         state = request.result || fresh();
-        if (action) { action(state); state.revision++; store.put(state, 'cabinet'); }
+        if (action) { fillMissingDesigns(state); action(state); state.revision++; store.put(state, 'cabinet'); }
       };
       tx.oncomplete = () => resolve(state);
       tx.onabort = () => reject(tx.error || new Error('Storage unavailable'));
@@ -37,9 +45,13 @@
   }
   window.WishStore = {
     persistent: connection.then(Boolean),
-    read: () => access(),
+    async read() {
+      const state = await access();
+      if (state.notes.some(note => !validIds.has(note.designId))) return access(() => {});
+      return state;
+    },
     add(text, author) {
-      return access(state => state.notes.push({id:'w-'+(state.revision+1), text, author, created:Date.now(), opened:0, done:false}));
+      return access(state => state.notes.push({id:'w-'+(state.revision+1), text, author, created:Date.now(), opened:0, done:false, designId:assignDesign()}));
     },
     select() {
       return access(state => {

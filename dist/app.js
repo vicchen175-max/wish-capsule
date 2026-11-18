@@ -11,7 +11,7 @@
     '找张我们最早的合照，在同一个姿势下再拍一张。'
   ];
   let state = {revision:-1, notes:[], pending:null};
-  let machine, busy = '', selectedId = '', suggestion = '', ideaIndex = Math.floor(Math.random()*ideas.length);
+  let machine, busy = '', suggestion = '', ideaIndex = Math.floor(Math.random()*ideas.length);
   let updates;
   try { if (window.BroadcastChannel) updates = new BroadcastChannel('wish-post-for-two'); } catch {}
   const poolSize = () => state.notes.filter(note => !note.opened && note.id !== state.pending).length;
@@ -24,7 +24,7 @@
     $('opened').textContent = count(state.notes.filter(note => note.opened).length);
     $('drawBtn').disabled = !machine || Boolean(busy) || (!state.pending && !waiting);
     $('writeBtn').disabled = !machine || Boolean(busy);
-    $('drawText').textContent = busy === 'draw' ? '扭蛋中…' : state.pending ? '拆开心愿' : '抽一颗';
+    $('drawText').textContent = busy === 'draw' ? '扭蛋中…' : state.pending ? '揭晓彩卡' : '抽一颗';
     $('drawBtn').className = 'button ' + (state.pending || waiting ? 'main-button' : 'secondary');
     $('writeBtn').className = 'button ' + (state.pending || waiting ? 'secondary' : 'main-button');
   }
@@ -72,47 +72,26 @@
     } catch { announce('这张纸条没能存好，请再试一次。'); $('saveError').hidden = false; }
     finally { busy = ''; updateInput(); paint(); }
   };
-  function sealed(id) {
-    selectedId = id;
-    $('sealed').hidden = false; $('unfolded').hidden = true;
-    $('letterBody').textContent = ''; $('letterFrom').textContent = '';
-    $('letter').setAttribute('aria-labelledby','letterTitle');
-    show('letter'); $('reveal').focus();
-  }
   async function draw() {
     if (busy || !machine || document.querySelector('dialog[open]')) return;
-    if (state.pending) { sealed(state.pending); return; }
-    if (!poolSize()) { compose(); return; }
+    const resuming = Boolean(state.pending);
+    if (!resuming && !poolSize()) { compose(); return; }
     busy = 'draw'; paint(); announce('旋钮转动了，看看会掉出哪一颗。');
     try {
-      adopt(await store.select()); notify();
+      adopt(resuming ? await store.read() : await store.select());
+      if (!resuming) notify();
       const id = state.pending;
-      if (!id) { announce('机器里暂时没有待抽的心愿。'); return; }
-      await machine.dispense();
-      adopt(await store.read());
-      if (state.pending === id) {
-        announce('抽到了一封心愿，拆开看看。');
-        sealed(id);
-      } else { announce('这封心愿已收进记录。'); }
-    } catch { announce('请再试一次，已抽出的纸条可以继续拆开。'); }
+      const note = state.notes.find(item => item.id === id);
+      if (!note) { announce('机器里暂时没有待抽的心愿。'); return; }
+      const art = window.WishCards.prime(note.designId);
+      await Promise.all([resuming ? undefined : machine.dispense(),
+        Promise.race([art, new Promise(resolve => setTimeout(resolve, 1800))])]);
+      adopt(await store.open(id)); notify();
+      const card = state.notes.find(item => item.id === id && item.opened);
+      if (card) { window.WishCards.show(card); announce('彩卡已收进心愿记录。'); }
+    } catch { announce('暂时没能揭晓，请点按钮再试一次。'); }
     finally { busy = ''; syncMachine(); paint(); }
   }
-  $('reveal').onclick = async () => {
-    if (busy || !selectedId) return;
-    busy = 'open'; $('reveal').disabled = true;
-    try {
-      adopt(await store.open(selectedId)); notify(); syncMachine();
-      const note = state.notes.find(note => note.id === selectedId && note.opened);
-      if (!note) { $('letter').close(); return; }
-      $('sealed').hidden = true; $('unfolded').hidden = false;
-      $('letter').setAttribute('aria-labelledby','readTitle');
-      $('letterDate').textContent = formatDate(note.opened);
-      $('letterBody').textContent = note.text;
-      $('letterFrom').textContent = '—— ' + (note.author || '匿名');
-      $('unfolded').querySelector('button').focus(); announce('这张纸条已收进心愿记录。');
-    } catch { announce('暂时没有拆开，请再试一次。'); }
-    finally { busy = ''; $('reveal').disabled = false; paint(); }
-  };
   function journal() {
     const list = $('entries');
     const notes = state.notes.filter(n => n.opened).sort((a,b) => b.opened-a.opened);
@@ -129,7 +108,9 @@
         catch { done.disabled = false; done.textContent = '再试一次'; }
       };
       const body = document.createElement('p'); body.className = 'entry-body'; body.textContent = note.text;
-      head.append(date,done); entry.append(head,body); list.append(entry);
+      const copy = document.createElement('div');
+      head.append(date,done); copy.append(head,body);
+      entry.append(window.WishCards.thumbnail(note),copy); list.append(entry);
     }
   }
   $('writeBtn').onclick = () => { $('saveError').hidden = true; compose(); };
@@ -153,7 +134,7 @@
     if (!machine.is3D) $('machineHint').textContent = '点击旋钮抽取';
     await refresh();
     if (!await store.persistent) $('saveInfo').textContent = '此浏览器仅暂存本次心愿';
-    if (state.pending) announce('上次抽到的心愿还在，点「拆开心愿」继续。');
+    if (state.pending) announce('上次抽到的心愿还在，点「揭晓彩卡」继续。');
     paint();
   }
   init();
